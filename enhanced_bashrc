@@ -1,0 +1,221 @@
+# =================================================================
+# 🚀 DEVOPS PROMPT ULTRA PRO MAX (AUTO-CHAIN FINAL)
+# =================================================================
+
+HISTFILESIZE=10000
+
+# ---------- ICONS ----------
+ICON_OS=""; ICON_DIR=""; ICON_GIT=""; ICON_KUBE="☸"
+ICON_PY=""; ICON_NODE=""; ICON_REACT="⚛"
+ICON_DOCKER=""; ICON_CI=""; ICON_ENV=""; ICON_AWS=""
+ICON_TIME=""; ICON_RAM="󰍛"; ICON_CPU="󰘚"
+
+GIT_DIRTY="✗"; GIT_CLEAN="✔"; GIT_AHEAD="↑"; GIT_BEHIND="↓"
+
+ARROW=""; LN_TOP="╭─"; LN_BTM="╰─"
+
+# ---------- COLORS ----------
+RS="\[\e[0m\]"; WHITE="\[\e[38;5;255m\]"; BOLD="\[\e[1m\]"
+GRAY="\[\e[38;5;242m\]"
+
+BG_OS="48;5;166"; BG_USER="48;5;238"; BG_DIR="48;5;27"
+BG_GIT="48;5;31"; BG_KUBE="48;5;58"; BG_VENV="48;5;60"
+
+# ---------- HELPERS ----------
+has_file() { compgen -G "$1" > /dev/null; }
+
+# ---------- SEGMENT BUILDER (NO ARROW HERE) ----------
+build_segment() {
+    local bg=$1 content=$2
+    echo -ne "\[\e[${bg}m\]${WHITE}${BOLD} ${content} ${RS}"
+}
+
+# ---------- ARROW ----------
+build_arrow() {
+    local from_bg=$1 to_bg=$2
+    local from_code=$(echo $from_bg | cut -d';' -f3)
+    echo -ne "\[\e[38;5;${from_code};${to_bg}m\]${ARROW}${RS}"
+}
+
+# ---------- GIT ----------
+get_git() {
+    git rev-parse --is-inside-work-tree &>/dev/null || return
+
+    local branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null)
+    local status=""
+
+    git diff --quiet || status+=" ${GIT_DIRTY}"
+    git diff --cached --quiet || status+=" ●"
+
+    local ahead=$(git rev-list --count @{upstream}..HEAD 2>/dev/null)
+    local behind=$(git rev-list --count HEAD..@{upstream} 2>/dev/null)
+
+    [[ $ahead -gt 0 ]] && status+=" ${GIT_AHEAD}${ahead}"
+    [[ $behind -gt 0 ]] && status+=" ${GIT_BEHIND}${behind}"
+
+    [[ -z "$status" ]] && status=" ${GIT_CLEAN}"
+
+    echo "$BG_GIT|${ICON_GIT} $branch$status"
+}
+
+# ---------- DETECT ALL SEGMENTS ----------
+collect_segments() {
+    SEGMENTS=()
+
+    SEGMENTS+=("$BG_OS|$ICON_OS")
+    SEGMENTS+=("$BG_USER|\u@\h")
+    SEGMENTS+=("$BG_DIR|${ICON_DIR} \w")
+
+    git_seg=$(get_git)
+    [[ -n "$git_seg" ]] && SEGMENTS+=("$git_seg")
+
+    ([[ -n "$VIRTUAL_ENV" ]] || has_file "*.py") &&
+        SEGMENTS+=("$BG_VENV|${ICON_PY} py")
+
+    if [[ -f package.json ]]; then
+        grep -qi react package.json &&
+            SEGMENTS+=("48;5;45|${ICON_REACT} react") ||
+            SEGMENTS+=("48;5;70|${ICON_NODE} node")
+    fi
+
+    [[ -f Dockerfile || -f docker-compose.yml ]] &&
+        SEGMENTS+=("48;5;33|${ICON_DOCKER} docker")
+
+    [[ -f Jenkinsfile || -d .github || -f .gitlab-ci.yml ]] &&
+        SEGMENTS+=("48;5;240|${ICON_CI} ci")
+
+    [[ -f .env ]] &&
+        SEGMENTS+=("48;5;136|${ICON_ENV} env")
+
+    [[ -n "$AWS_PROFILE" ]] &&
+        SEGMENTS+=("48;5;94|${ICON_AWS} $AWS_PROFILE")
+
+    if command -v kubectl >/dev/null 2>&1; then
+        local ctx=$(kubectl config current-context 2>/dev/null)
+        local ns=$(kubectl config view --minify --output 'jsonpath={..namespace}' 2>/dev/null)
+        [[ -n "$ctx" ]] && {
+            [[ -z "$ns" ]] && ns="default"
+            local bg="48;5;58"
+            [[ "$ctx" == *prod* ]] && bg="48;5;160"
+            [[ "$ctx" == *dev* ]] && bg="48;5;22"
+            SEGMENTS+=("$bg|${ICON_KUBE} $ctx:$ns")
+        }
+    fi
+}
+
+# ---------- RENDER ----------
+render_segments() {
+    local output=""
+    local count=${#SEGMENTS[@]}
+
+    for ((i=0; i<count; i++)); do
+        IFS="|" read -r bg content <<< "${SEGMENTS[$i]}"
+        output+="$(build_segment "$bg" "$content")"
+
+        if (( i < count-1 )); then
+            IFS="|" read -r next_bg _ <<< "${SEGMENTS[$i+1]}"
+            output+="$(build_arrow "$bg" "$next_bg")"
+        else
+            # FINAL CLEAN ARROW (fade to default)
+            local code=$(echo $bg | cut -d';' -f3)
+            output+="\[\e[38;5;${code};49m\]${ARROW}${RS}"
+        fi
+    done
+
+    echo "$output"
+}
+# ---------- METRICS ----------
+get_metrics() {
+    local time=$(date +%H:%M:%S)
+    local load=$(awk '{print $1}' /proc/loadavg)
+
+    local mem_used=$(free | awk '/Mem:/ {print $3}')
+    local mem_total=$(free | awk '/Mem:/ {print $2}')
+    local mem_percent=$((mem_used * 100 / mem_total))
+
+    local mem_human=$(free -h | awk '/Mem:/ {print $3 "/" $2}')
+
+    # CPU color
+    local cpu_color="\033[32m"   # green
+    (( $(echo "$load > 1" | bc -l) )) && cpu_color="\033[33m"
+    (( $(echo "$load > 2" | bc -l) )) && cpu_color="\033[31m"
+
+    # RAM color
+    local ram_color="\033[32m"
+    (( mem_percent > 60 )) && ram_color="\033[33m"
+    (( mem_percent > 80 )) && ram_color="\033[31m"
+
+    echo -ne "\033[38;5;242m${ICON_TIME} $time\033[0m | "
+    echo -ne "${cpu_color}${ICON_CPU} $load\033[0m | "
+    echo -ne "${ram_color}${ICON_RAM} $mem_human\033[0m"
+}
+# ---------- RIGHT ALIGN ----------
+strip_ansi() {
+    sed 's/\x1b\[[0-9;]*m//g'
+}
+
+visible_length() {
+    echo -e "$1" | strip_ansi | wc -c
+}
+
+right_prompt() {
+    local metrics="$(get_metrics)"
+
+    # Strip ANSI for correct length
+    local plain=$(echo -e "$metrics" | sed 's/\x1b\[[0-9;]*m//g')
+    local len=${#plain}
+
+    # Save cursor
+    echo -ne "\033[s"
+
+    # Go to extreme right
+    echo -ne "\033[999C"
+
+    # Move left exactly by visible length
+    echo -ne "\033[${len}D"
+
+    # Print metrics (with color)
+    echo -ne "$metrics"
+
+    # Restore cursor
+    echo -ne "\033[u"
+}
+
+# ---------- MAIN ----------
+set_full_prompt() {
+    local EXIT=$?
+    PS1="\n"
+
+    [[ $EXIT -eq 0 ]] && PS1+=" \[\e[32m\]✔${RS}\n" || PS1+=" \[\e[31m\]✘ $EXIT${RS}\n"
+
+    collect_segments
+
+    PS1+="${GRAY}${LN_TOP}${RS}"
+    PS1+="$(render_segments)"
+    PS1+="\$(right_prompt)"
+
+    PS1+="\n${GRAY}${LN_BTM}${RS}${BOLD} ➜ ${RS}"
+}
+
+PROMPT_COMMAND=set_full_prompt
+
+# ---------- REQUIRED ----------
+shopt -s checkwinsize
+
+# ---------- LS COLORS ----------
+if [ -x /usr/bin/dircolors ]; then
+    eval "$(dircolors -b)"
+    alias ls='ls --color=auto'
+fi
+
+alias aws-bill='aws ce get-cost-and-usage \
+  --time-period Start=$(date +%Y-%m-01),End=$(date -d "tomorrow" +%Y-%m-%d) \
+  --granularity MONTHLY \
+  --metrics "UnblendedCost" \
+  --query "ResultsByTime[0].Total.UnblendedCost.Amount" \
+  --output text'
+PROMPT_COMMAND=set_full_prompt
+
+export NVM_DIR="$HOME/.nvm"
+[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"  # This loads nvm
+[ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"  # This loads nvm bash_completion
